@@ -3,6 +3,7 @@
 # Lancer l'appli app_nov.py sur le port 5000
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+import asyncio
 import requests
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
@@ -15,7 +16,7 @@ from sqlalchemy.orm import sessionmaker
 import mlflow
 import mlflow.sklearn
 
-from functions import calcul_metrics, check_performance_degradation, send_alert, get_metrics
+from functions import calcul_metrics, check_performance_degradation, send_alert, get_metrics, send_train_request
 from models_sql import Base, ImportSegmentContxt, ImportSegmentComp, User
 
 import numpy as np
@@ -285,7 +286,9 @@ def handle_user_feedback():
     run_name = username
     experiment_id = experiment.experiment_id
     runs = mlflow.search_runs(experiment_ids=[experiment_id])
+    print('runs :', runs)
     num_runs = len(runs)
+    print("len de runs :", num_runs)
     run_index = num_runs
 
     with mlflow.start_run(run_name=run_name) :
@@ -301,38 +304,64 @@ def handle_user_feedback():
         mlflow.log_metric("recall_comp", recall_comp)
         mlflow.log_metric("f1_score_comp", f1_comp)
     
-    # CALCUL DU NBRE DE RUNS ET CHECK PERFORMANCES DES 2 ALGOS
-    if num_runs % 10 != 0 :
+    # CALCUL DU NBRE DE RUNS ET CHECK PERFORMANCES DES 2 ALGOS 
+    if num_runs % 2 != 0 :
         print(f"Nombre de runs pour l'expérimentation '{experiment_name}': {num_runs}")
         return redirect(url_for('results'))
         
-    elif num_runs % 10 == 0 and num_runs != 0:
+    elif num_runs % 2 == 0 and num_runs != 0:
         print(f"Nombre de runs atteint un multiple de 10 : {num_runs}")
             
-        runs_metrics = get_metrics(runs)
-        print("métriques des 10 runs précédents :", runs_metrics)
-        print("runs_metrics :", runs_metrics)
+        latest_runs, metrics_10runs = get_metrics(runs)
+        print('metrics_10runs : ', metrics_10runs)
+        metrics_1 = [(run["accuracy_contxt"], run["precision_contxt"], run["recall_contxt"], run["f1_score_contxt"])
+                    for run in metrics_10runs]
+        metrics_2 = [(run["accuracy_comp"], run["precision_comp"], run["recall_comp"], run["f1_score_comp"])
+                    for run in metrics_10runs]
+        print("métriques_algo_1 des 10 runs précédents :", metrics_1)
+        print("métriques_algo_1 des 10 runs précédents :", metrics_2)
 
-        stable = check_performance_degradation(runs_metrics)
-        if stable:
-            return redirect(url_for('index')) # changer pour la route résults ?
+        stable_algo_1 = check_performance_degradation(metrics_1)
+        stable_algo_2 = check_performance_degradation(metrics_2)
+
+        if stable_algo_1:
+            if stable_algo_2:
+                return redirect(url_for('results')) # changer pour la route résults ?
             
-        if not stable:
-            send_alert("Performances dégradés")
+            if not stable_algo_2:
+                send_alert("Performances dégradées de rfc_2")
+                return redirect(url_for('results'))
 
-            # API endpoint details  REPRENDRE l'APPEL à API_MODEL SUR LA ROUTE /retrain, QUI ELLE REQUETE API_DATA
-            #url = 'http://127.0.0.1:8000/retrain'
-            #params = {'text_input': input_text}
-            #headers = {'accept': 'application/json'}
+                '''response_algo_2 = asyncio.run(send_train_request('http://127.0.0.1:8000/train_algo_2'))
+                if response_algo_2.status_code == 200:
+                    return redirect(url_for('results'))
+                else:
+                # Gérer les erreurs ici si nécessaire
+                    print('message : rfc_1 stable ; Erreur lors du réentraînement de rfc_2')
+                    return redirect(url_for('results'))'''
+            
+        if not stable_algo_1:
+            send_alert("Performances dégradés de rfc_1")
 
-            return redirect(url_for('index'))
+            #response_algo_1 = asyncio.run(send_train_request('http://127.0.0.1:8000/train_algo_1'))
+            #if response_algo_1.status_code == 200:
+            if stable_algo_2:
+                print('message : rfc_1 doit être réentrainé ; rfc_2 stable')
+                return redirect(url_for('results'))
+        
+            if not stable_algo_2:
+                send_alert("Performances dégradés de rfc_1 et rfc_2")
+                return redirect(url_for('results'))
+                '''response_algo_2 = asyncio.run(send_train_request('http://127.0.0.1:8000/train_algo_2'))
+                    if response_algo_2.status_code == 200:
+                        return redirect(url_for('results'))
+                    else:
+                        print('message : rfc_1 et rfc_2 doivent être réentrainés')
+                        return redirect(url_for('results'))'''
+        
 
-    # GERER SI MEME USER:
-    # return redirect(url_for('index'))
-    # OU SI CHANGEMENT USER : retourne sur url_for('register')
 
-
-# INSERER ICI UNE NOUVELLE ROUTE /results
+# ROUTE /results
 @app.route('/results', methods=['GET', 'POST'])
 def results():
     print(session['username'])

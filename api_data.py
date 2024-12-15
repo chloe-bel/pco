@@ -1,15 +1,19 @@
 # Pour lancer API DATA : uvicorn api_data:app --reload --host 127.0.0.1 --port 8001
 
-from fastapi import FastAPI, HTTPException
-from datetime import datetime, timedelta
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from pydantic import BaseModel
+from jose import JWTError, jwt
+
 import requests
 
 import pandas as pd
+from datetime import datetime, timedelta
 
 from pydantic import BaseModel
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker
 from models_sql import ImportSegmentContxt, ImportSegmentComp, OffresExtract, User
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -20,6 +24,47 @@ DATABASE_URL = "postgresql://postgres:postgre@localhost/db_pco"
 engine = create_engine(DATABASE_URL)
 DBSession = sessionmaker(bind=engine)
 db_session = DBSession()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+# Clé secrète et algo de signature pour JWT
+SECRET_KEY = "1234"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30  # Durée de validité du token
+
+# Modèle Pydantic pour représenter les informations du Token
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+# Modèle pour la création d'un utilisateur
+class UserCreate(BaseModel):
+    username: str
+    password: str
+
+# Fonction pour obtenir un utilisateur depuis la base de données
+def get_user(username: str):
+    return db_session.query(User).filter(User.username == username).first()
+
+# Fonction pour extraire l'utilisateur actuel à partir du token JWT
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        # Décoder le token JWT pour extraire les informations de l'utilisateur
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    
+    user = get_user(username=username)
+    if user is None:
+        raise credentials_exception
+    return user
 
 
 # Configuration API
@@ -95,7 +140,7 @@ def fetch_offres_bretagne():
 
 # Route API pour lancer le scraping
 @app.get("/france_travail")
-def get_offres_bretagne():
+def get_offres_bretagne(current_user: User = Depends(get_current_user)):
     try:
         df = fetch_offres_bretagne()
 
@@ -166,10 +211,22 @@ def get_combined_offres():
     
 
 # ROUTE POUR GERER L'ENREGISTREMENT DES NVO UTILISATEURS DANS users DE db_pco
-# Modèle Pydantic pour valider les données utilisateur
-class UserCreate(BaseModel):
-    username: str
-    password: str
+# Route pour obtenir un token JWT
+@app.post("/token", response_model=Token)
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = get_user(username=form_data.username)
+    if user is None or not user.check_password(form_data.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    # Créez un token JWT pour l'utilisateur
+    access_token = user.create_access_token(data={"sub": user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+
 # Route pour ajouter un utilisateur
 @app.post("/users")
 def create_user(user_data: UserCreate):
@@ -191,6 +248,7 @@ def create_user(user_data: UserCreate):
     db_session.refresh(new_user)
     
     return {"message": "User created successfully", "user_id": new_user.id}
+
 
 # ROUTES POUR IMPORTER LES TABLES DE MONITORING : REENTRAINEMENT DES MODELES
 # Route pour obtenir les données de `ImportSegmentComp`

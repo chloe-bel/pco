@@ -94,8 +94,11 @@ def split_on_newlines(doc):
         segments = sent_text_final.split('\n')
         for segment in segments:
             segment = segment.strip()
-            if segment:
-                lines.append(segment)
+            
+            if len(segment) == 1 or not segment or re.match(r'^[^\w\s]+$', segment):
+                continue
+
+            lines.append(segment)
     
     return lines
 
@@ -109,47 +112,6 @@ def lignes_segm(cellule):
 # FONCTION DE SIMILARITE
 array_comp = np.load('C:\\Users\\Utilisateur\\Documents\\Prepa_Diplome\\PCO_nov\\DB_pco\\array_comp_esco.npy', allow_pickle = True)
 vectors_comp = array_comp[: , 2:]
-
-# URL de l'API api_data.py
-'''API_DATA_URL = "http://127.0.0.1:8001"
-
-def fetch_comp_esco():
-    """
-    Récupère toutes les données de comp_esco depuis l'API api_data.py.
-    """
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            response = client.get(f"{API_DATA_URL}/comp_esco")
-            response.raise_for_status()  # Vérifie les erreurs HTTP
-            data = response.json()
-
-        if not data:
-            print("Aucune donnée renvoyée par l'API.")
-            return [], [], np.array([])
-
-        # Conversion des données JSON en matrices numpy
-        uris = [item["uri"] for item in data]
-        skills = [item["skill_name"] for item in data]
-        embeddings = np.array([item["embedding"] for item in data])
-
-        return uris, skills, embeddings
-    except httpx.RequestError as exc:
-        print(f"Erreur lors de la requête vers l'API: {exc}")
-        return [], [], np.array([])
-    except httpx.HTTPStatusError as exc:
-        print(f"Erreur HTTP: {exc.response.status_code}")
-        return [], [], np.array([])
-    except Exception as e:
-        print(f"Erreur générale: {str(e)}")
-        return [], [], np.array([])
-
-
-# Conversion en matrices similaires à celles utilisées dans array_comp
-# Charger les données de l'API
-uris, skills, vectors_comp = fetch_comp_esco()
-print("uris :", len(uris))
-print("skills :", len(skills))
-print("vectors_comp :", vectors_comp.shape)'''
 
 vector_dim = 1024
 index = faiss.IndexFlatL2(vector_dim)
@@ -227,7 +189,9 @@ def calcul_metrics(y_true, y_pred):
 # MONITORING
 # Fonction de récupération des métriques des runs depuis l'experiment MLFlow
 def get_metrics(runs):
-    latest_runs = runs.tail(10)  # Utilise tail(10) pour obtenir les 10 runs les plus récents
+    sorted_runs = runs.sort_values(by="start_time", ascending=False)  # Tri décroissant par start_time
+    latest_runs = sorted_runs.head(10)
+    print("latest_runs :", latest_runs)
     metrics_10runs = []
 
     # Récupération des métriques de chaque run
@@ -238,7 +202,7 @@ def get_metrics(runs):
         # Charger le run pour obtenir ses métriques
         run_data = mlflow.get_run(run_id).data
         metrics = run_data.metrics
-        
+
         # Affichage des métriques pour ce run
         run_metrics = {"run_id": run_id}  # Créer un dictionnaire pour chaque run
         for metric_name, metric_value in metrics.items():
@@ -246,7 +210,7 @@ def get_metrics(runs):
             run_metrics[metric_name] = metric_value
         metrics_10runs.append(run_metrics)  # Ajouter le dictionnaire du run à la liste principale
     
-    return metrics_10runs 
+    return latest_runs, metrics_10runs
 
 
 # Valeurs de référence pour les métriques
@@ -257,10 +221,10 @@ f1_ref = 0.9405204460966543
 tolerance = 0.1
 
 def check_performance_degradation(metrics):
-    avg_accuracy = np.mean([m['accuracy_offre'] for m in metrics])
-    avg_precision = np.mean([m['precision_offre'] for m in metrics])
-    avg_recall = np.mean([m['recall_offre'] for m in metrics])
-    avg_f1 = np.mean([m['f1_score_offre'] for m in metrics])
+    avg_accuracy = np.mean([m[0] for m in metrics])
+    avg_precision = np.mean([m[1] for m in metrics])
+    avg_recall = np.mean([m[2] for m in metrics])
+    avg_f1 = np.mean([m[3] for m in metrics])
     
     print(f"Moyennes des 10 derniers runs : Accuracy: {avg_accuracy}, Precision: {avg_precision}, Recall: {avg_recall}, F1-score: {avg_f1}")
     
@@ -271,10 +235,8 @@ def check_performance_degradation(metrics):
     
     # Condition de dégradation pour déclencher le réentraînement
     if accuracy_degraded or recall_degraded or precision_degraded or f1_degraded:
-        print("Monitoring : performances dégradées. Déclenchement du réentraînement.")
         return False  # Dégradation des performances
     else:
-        print("Monitoring : performances stables.")
         return True  
 
 
@@ -301,6 +263,23 @@ def send_alert(message):
     print("ALERTE :", message)
 
 
+# FONCTION DE REQUETE DES ROUTES D'ENTRAINEMENT
+async def send_train_request(url):
+    try:
+        # Augmenter le timeout à 60 secondes par exemple
+        timeout = httpx.Timeout(60.0)  # Timeout de 60 secondes
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(url)
+        return response
+    except httpx.TimeoutException as e:
+        print(f"Timeout Error: {e}")
+        return None
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+
+
 # FONCTION DE SUPPRESSION DES DONNES DE MONITORING SI REENTRAINEMENT ET VALIDATION DES NOUVEAUX MODELES
 import psycopg2
 
@@ -319,19 +298,36 @@ def connect_to_postgres():
         return None
 
 
-def delete_training_data():
+def delete_training_data_1():
     connection = connect_to_postgres()
     if connection is not None:
         cursor = connection.cursor()
         
         try:
-            # Exemple de suppression des données dans les tables utilisées pour l'entraînement
-            # Remplacez 'nom_de_table' par le nom réel de la table
-            delete_query_1 = "DELETE FROM table_monitoring_comp"  # Ajoutez votre condition
-            cursor.execute(delete_query_1)
             delete_query_2 = "DELETE FROM table_monitoring_contxt"  # Ajoutez votre condition
             cursor.execute(delete_query_2)
-            connection.commit()  # Assurez-vous que les modifications sont bien appliquées
+            connection.commit()
+
+            print("Données de réentrainement supprimées avec succès.")
+
+        except Exception as error:
+            print(f"Erreur lors de la suppression des données : {error}")
+            connection.rollback()  # En cas d'erreur, annulez les changements
+        finally:
+            cursor.close()
+            connection.close()
+    else:
+        print("Échec de la connexion à la base de données.")
+
+def delete_training_data_2():
+    connection = connect_to_postgres()
+    if connection is not None:
+        cursor = connection.cursor()
+        
+        try:
+            delete_query_1 = "DELETE FROM table_monitoring_comp"
+            cursor.execute(delete_query_1)
+            connection.commit()
 
             print("Données de réentrainement supprimées avec succès.")
 

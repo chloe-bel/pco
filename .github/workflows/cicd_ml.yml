@@ -1,0 +1,92 @@
+# s'occupe de l'entrainement des modèles, des tests et de la mise à jour des modèles sur MLFLow
+
+name: Model CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  get-models:
+    runs-on: ubuntu-latest
+    steps:
+      # Étape 1 : Récupérer le code source
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      # Étape 2 : Configurer Python
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Étape 3 : Chargement des derniers modèles en production depuis MLFlow
+      - name: Get last rfc_1
+        run: |
+          # Utilisation de l'API MLFlow pour récupérer le dernier modèle en production
+          python -c "
+          import mlflow
+          from mlflow.models import Model
+          client = mlflow.tracking.MlflowClient()
+          model_version = client.get_latest_versions('random_forest_model', stages=['Production'])[0]
+          model_uri = f'models:/{model_version.name}/Production'
+          print(f'Récupération du modèle à l\'URI : {model_uri}')
+          "
+          id: get_model
+
+      - name: Test rfc_1
+        run: |
+            python -c "
+            import mlflow
+            model_uri = '$(steps.get_model.outputs.model_uri)'  # Utiliser l'URI du modèle en production
+            model = mlflow.sklearn.load_model(model_uri)
+            # Effectuer un test avec des données de test ou un scénario spécifique
+            # Exemple : model.predict(test_data)
+            print('Modèle chargé et testé avec succès !')
+            "
+
+      - name: Get last rfc_2
+        run: |
+            # Utilisation de l'API MLFlow pour récupérer le dernier modèle en production
+            python -c "
+            import mlflow
+            from mlflow.models import Model
+            client = mlflow.tracking.MlflowClient()
+            model_version = client.get_latest_versions('random_forest_model', stages=['Production'])[0]
+            model_uri = f'models:/{model_version.name}/Production'
+            print(f'Récupération du modèle à l\'URI : {model_uri}')
+            "
+            id: get_model
+
+      - name: Test rfc_2
+        run: |
+            python -c "
+            import mlflow
+            model_uri = '$(steps.get_model.outputs.model_uri)'  # Utiliser l'URI du modèle en production
+            model = mlflow.sklearn.load_model(model_uri)
+            # Effectuer un test avec des données de test ou un scénario spécifique
+            # Exemple : model.predict(test_data)
+            print('Modèle chargé et testé avec succès !')
+            "
+
+# Étape 3 : Packaging et Déploiement de l'Application A REPRENDRE
+  package-and-deploy:
+    needs: get-models
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build Docker Image
+        run: |
+          mlflow models build-docker -m "models:/random_forest_model/Staging" -n random_forest_image
+
+# Déployer le modèle : SI DEPLOIEMENT SUR MLFLOW QUEL INTERET DE FAIRE UNE IMAGE DOCKER ???
+      - name: Deploy Model
+        run: |
+          mlflow models serve -m "models:/random_forest_model/Production" -p 5001
+# ou mlflow models serve -m "runs:/<run_id>/model" -p 5001'''
+
