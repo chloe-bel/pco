@@ -17,6 +17,10 @@ jobs:
         with:
           lfs: true  # Activer Git LFS
 
+      # Définir une variable d'environnement indiquant que l'on est dans GitHub Actions
+      - name: Set environment variable for GitHub Actions
+        run: echo "GITHUB_ACTIONS=true" >> $GITHUB_ENV
+
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
