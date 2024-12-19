@@ -12,6 +12,16 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:13
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgre
+          POSTGRES_DB: db_pco
+
     steps:
       - name: Check out code
         uses: actions/checkout@v2
@@ -50,9 +60,17 @@ jobs:
             curl -s http://127.0.0.1:5001 || echo "Waiting for MLFlow..."
             sleep 1
           done
+      
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          until pg_isready -h localhost -p 5432; do
+            echo "Waiting for PostgreSQL...";
+            sleep 2;
+          done
 
       - name: Run tests
         env:
           MLFLOW_TRACKING_URI: http://127.0.0.1:5001
+          DATABASE_URL: postgresql://postgres:postgre@localhost:5432/db_pco
         run: |
           pytest --maxfail=1 --disable-warnings -q
