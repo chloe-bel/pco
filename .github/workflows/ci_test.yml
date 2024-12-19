@@ -70,7 +70,7 @@ jobs:
 
       - name: Import database schema
         run: |
-            psql postgresql://postgres:postgre@postgres:5432/db_pco < sql/db_pco_schema.sql
+            psql postgresql://postgres:postgre@postgres:5432/db_pco < db_pco_schema.sql
         
 
       - name: Run tests
