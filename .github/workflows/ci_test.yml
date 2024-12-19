@@ -71,6 +71,6 @@ jobs:
       - name: Run tests
         env:
           MLFLOW_TRACKING_URI: http://127.0.0.1:5001
-          DATABASE_URL: postgresql://postgres:postgre@localhost:5432/db_pco
+          DATABASE_URL: postgresql://postgres:postgre@postgres:5432/db_pco
         run: |
           pytest --maxfail=1 --disable-warnings -q
