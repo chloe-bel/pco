@@ -68,12 +68,10 @@ jobs:
             sleep 5;
           done
 
-      - name: Apply database migrations
+      - name: Import database schema
         run: |
-          alembic upgrade head
-        env:
-          DATABASE_URL: postgresql://postgres:postgre@postgres:5432/db_pco
-
+            psql postgresql://postgres:postgre@postgres:5432/db_pco < sql/db_pco_schema.sql
+        
 
       - name: Run tests
         env:
