@@ -23,27 +23,32 @@ jobs:
           POSTGRES_DB: db_pco
 
     steps:
+      # Vérification du code source
       - name: Check out code
         uses: actions/checkout@v2
         with:
           lfs: true
 
+      # Configuration de Python
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: '3.9'
 
+      # Configuration de Git LFS
       - name: Set up Git LFS
         run: |
           git lfs install
           git lfs pull
 
+      # Installation des dépendances
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install mlflow  # Installer MLFlow si nécessaire
 
+      # Lancement de MLFlow
       - name: Start MLFlow
         run: |
           nohup mlflow server \
@@ -54,25 +59,30 @@ jobs:
         env:
           MLFLOW_TRACKING_URI: http://127.0.0.1:5001
 
+      # Attente de démarrage de MLFlow
       - name: Wait for MLFlow to start
         run: |
           for i in {1..30}; do
-            curl -s http://127.0.0.1:5001 || echo "Waiting for MLFlow..."
-            sleep 2
+            curl -s http://127.0.0.1:5001 && break || echo "Waiting for MLFlow...";
+            sleep 2;
           done
-      
+
+      # Attente que PostgreSQL soit prêt
       - name: Wait for PostgreSQL to be ready
         run: |
-          until pg_isready -h localhost -p 5432; do
-            echo "Waiting for PostgreSQL...";
+          for i in {1..10}; do
+            pg_isready -h postgres -p 5432 && break || echo "Waiting for PostgreSQL...";
             sleep 5;
           done
 
+      # Importation du schéma de base de données
       - name: Import database schema
         run: |
-            psql postgresql://postgres:postgre@postgres:5432/db_pco < .github/workflows/db_pco_schema.sql
-        
+          psql postgresql://postgres:postgre@postgres:5432/db_pco < .github/workflows/db_pco_schema.sql
+        env:
+          PGPASSWORD: postgre
 
+      # Exécution des tests
       - name: Run tests
         env:
           MLFLOW_TRACKING_URI: http://127.0.0.1:5001
