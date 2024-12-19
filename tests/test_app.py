@@ -3,6 +3,8 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+import requests
+
 from app import app
 
 
@@ -32,3 +34,11 @@ def test_login_page(client):
         'password': 'wrongpassword'
     })
     assert response.status_code == 302  # Redirection après une tentative échouée
+
+def test_mlflow_connection():
+    """Test si MLFlow est accessible"""
+    try:
+        response = requests.get("http://127.0.0.1:5001")
+        assert response.status_code == 200
+    except requests.ConnectionError:
+        pytest.fail("MLFlow server is not running on http://127.0.0.1:5001")

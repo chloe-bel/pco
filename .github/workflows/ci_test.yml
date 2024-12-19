@@ -11,15 +11,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out code
         uses: actions/checkout@v2
         with:
-          lfs: true  # Activer Git LFS
-
-      # Définir une variable d'environnement indiquant que l'on est dans GitHub Actions
-      - name: Set environment variable for GitHub Actions
-        run: echo "GITHUB_ACTIONS=true" >> $GITHUB_ENV
+          lfs: true
 
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -35,7 +32,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install mlflow  # Installer MLFlow si nécessaire
+
+      - name: Start MLFlow
+        run: |
+          nohup mlflow server \
+            --backend-store-uri sqlite:///mlflow.db \
+            --default-artifact-root ./mlruns \
+            --host 127.0.0.1 \
+            --port 5001 &
+        env:
+          MLFLOW_TRACKING_URI: http://127.0.0.1:5001
+
+      - name: Wait for MLFlow to start
+        run: |
+          for i in {1..30}; do
+            curl -s http://127.0.0.1:5001 || echo "Waiting for MLFlow..."
+            sleep 1
+          done
 
       - name: Run tests
+        env:
+          MLFLOW_TRACKING_URI: http://127.0.0.1:5001
         run: |
           pytest --maxfail=1 --disable-warnings -q
