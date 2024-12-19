@@ -58,14 +58,14 @@ jobs:
         run: |
           for i in {1..30}; do
             curl -s http://127.0.0.1:5001 || echo "Waiting for MLFlow..."
-            sleep 1
+            sleep 2
           done
       
       - name: Wait for PostgreSQL to be ready
         run: |
           until pg_isready -h localhost -p 5432; do
             echo "Waiting for PostgreSQL...";
-            sleep 2;
+            sleep 5;
           done
 
       - name: Run tests
