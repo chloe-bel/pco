@@ -33,8 +33,8 @@ mlflow.set_experiment("Suivi évolution des modèles PCO")
 #rfc_2 = mlflow.sklearn.load_model("models:/rfc_2/Production")
 
 
-rfc_1 = load('C:\\Users\\Utilisateur\\Documents\\Prepa_Diplome\\PCO_final\\Algos\\rfc_1.joblib')
-rfc_2 = load('C:\\Users\\Utilisateur\\Documents\\Prepa_Diplome\\PCO_final\\Algos\\rfc_2.joblib')
+rfc_1 = load('C:\\Users\\Utilisateur\\Documents\\Prepa_Diplome\\PCO_dec\\Algos\\rfc_1.joblib')
+rfc_2 = load('C:\\Users\\Utilisateur\\Documents\\Prepa_Diplome\\PCO_dec\\Algos\\rfc_2.joblib')
 
 
 @app.post("/predict")
