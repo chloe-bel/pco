@@ -24,11 +24,16 @@ jobs:
 
     steps:
       # Vérification du code source
-      - name: Check out code
-        uses: actions/checkout@v2
-        with:
-          lfs: true
-
+      # - name: Check out code
+        # uses: actions/checkout@v2
+        # with:
+          # lfs: true
+      - name: Checkout code
+        uses: nschloe/action-cached-lfs-checkout@v1
+        # Use these to explicitly include/exclude files:
+        # with:
+          # include: "DB_pco/array_comp_esco.npy"
+        #   exclude: ""
       # Configuration de Python
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -36,10 +41,10 @@ jobs:
           python-version: '3.9'
 
       # Configuration de Git LFS
-      - name: Set up Git LFS
-        run: |
-          git lfs install
-          git lfs pull
+      # - name: Set up Git LFS
+      #   run: |
+      #     git lfs install
+      #     git lfs pull
 
       # Installation des dépendances
       - name: Install dependencies
